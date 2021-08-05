@@ -1,0 +1,7 @@
+get
+http://localhost:9090/auth < Authorization
+http://localhost:9090/todos
+
+put
+http://localhost:9090/todos
+http://localhost:9090/todos/0
