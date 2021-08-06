@@ -2,14 +2,15 @@ package todo
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
 )
 
-var tasks map[int]*Task = make(map[int]*Task)
 var index int
+var tasks map[int]*Task = make(map[int]*Task)
 
 type Task struct {
 	Title string
@@ -20,34 +21,58 @@ type NewTaskTodo struct {
 	Task string `json:"task"`
 }
 
+type Serializer interface {
+	Decode(io.Reader, interface{}) error
+	Encode(io.Writer, interface{}) error
+}
+
+type JSONSerializer struct{}
+
+func (j JSONSerializer) Decode(r io.Reader, v interface{}) error {
+	return json.NewDecoder(r).Decode(v)
+}
+func (j JSONSerializer) Encode(w io.Writer, v interface{}) error {
+	return json.NewEncoder(w).Encode(v)
+}
+
+func NewJSONSerializer() JSONSerializer {
+	return JSONSerializer{}
+}
+
+type App struct {
+	serialize Serializer
+}
+
+func NewApp(serialize Serializer) *App {
+	return &App{
+		serialize: serialize,
+	}
+}
+
+func (app *App) AddTask(rw http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var task NewTaskTodo
+	if err := app.serialize.Decode(r.Body, &task); err != nil {
+		// if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	New(task.Task)
+}
+
 func AddTask(rw http.ResponseWriter, r *http.Request) {
-	// tokenString := r.Header.Get("Authorization")
-
-	// tokenString = strings.ReplaceAll(tokenString, "Bearer ", "")
-	// mySigningKey := []byte("password")
-	// _, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-	// 	// Don't forget to validate the alg is what you expect:
-	// 	if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-	// 		return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
-	// 	}
-
-	// 	// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-	// 	return mySigningKey, nil
-	// })
-	// if err != nil {
-	// 	rw.WriteHeader(http.StatusUnauthorized)
-	// 	return
-	// }
-
 	defer r.Body.Close()
 	var task NewTaskTodo
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
 	New(task.Task)
 }
-func TaskDone(rw http.ResponseWriter, r *http.Request) {
+
+func MarkDone(rw http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	index := vars["index"]
 	i, err := strconv.Atoi(index)
@@ -55,19 +80,22 @@ func TaskDone(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	// fmt.Println(tasks[i].Done)
+
 	tasks[i].Done = true
-	// task := tasks[i]
-	// task.Done = true
+
 }
 
-func GetTask(rw http.ResponseWriter, r *http.Request) {
-	if err := json.NewEncoder(rw).Encode(tasks); err != nil {
+func ListTask(rw http.ResponseWriter, r *http.Request) {
+	if err := json.NewEncoder(rw).Encode(List()); err != nil {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
 }
+
+func List() map[int]*Task {
+	return tasks
+}
+
 func New(task string) {
 	defer func() {
 		index++
@@ -77,5 +105,4 @@ func New(task string) {
 		Title: task,
 		Done:  false,
 	}
-	// return task
 }
